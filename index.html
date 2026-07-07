@@ -24,12 +24,13 @@
    CONFIGURACIÓN DE SUPABASE
    ============================================================ */
 const SUPABASE_URL = 'https://saxnrilgudkpjchanqpr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNheG5yaWxndWRrcGpjaGFucXByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzOTg3NDksImV4cCI6MjA5ODk3NDc0OX0.JeZ5c1KybzJu2EuTWiJWbYcuaEjViurLFc7oECPHaDc';
+// ⚠️ REEMPLAZA ESTO CON TU CLAVE ANON COMPLETA DE SUPABASE
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNheG5yaWxndWRrcGpjaGFucXByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc5MjU3ODEsImV4cCI6MjA1MzUwMTc4MX0.xxxxxxxxx';
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============================================================
-   NUEVO SISTEMA DE ALMACENAMIENTO CON SUPABASE
+   FUNCIONES DE SUPABASE - VERSIÓN CORREGIDA
    ============================================================ */
 window.storage = {
   // ---- PRODUCTOS ----
@@ -45,7 +46,7 @@ window.storage = {
   async upsertProducto(producto) {
     const { data, error } = await supabase
       .from('productos')
-      .upsert(producto)
+      .upsert(producto, { onConflict: 'id' })
       .select();
     if (error) throw error;
     return data[0];
@@ -72,7 +73,7 @@ window.storage = {
   async upsertVenta(venta) {
     const { data, error } = await supabase
       .from('ventas')
-      .upsert(venta)
+      .upsert(venta, { onConflict: 'id' })
       .select();
     if (error) throw error;
     return data[0];
@@ -99,7 +100,7 @@ window.storage = {
   async upsertEgreso(egreso) {
     const { data, error } = await supabase
       .from('egresos')
-      .upsert(egreso)
+      .upsert(egreso, { onConflict: 'id' })
       .select();
     if (error) throw error;
     return data[0];
@@ -127,7 +128,7 @@ window.storage = {
   async upsertFoto(productoId, dataUrl) {
     const { error } = await supabase
       .from('fotos')
-      .upsert({ producto_id: productoId, data_url: dataUrl });
+      .upsert({ producto_id: productoId, data_url: dataUrl }, { onConflict: 'producto_id' });
     if (error) throw error;
   },
 
@@ -147,7 +148,7 @@ window.storage = {
     return data || [];
   },
 
-  // ---- MANTENER COMPATIBILIDAD CON EL CÓDIGO EXISTENTE ----
+  // ---- COMPATIBILIDAD CON LOCALSTORAGE ----
   async get(k) {
     const val = localStorage.getItem(k);
     if (val === null) throw new Error('no existe');
@@ -201,7 +202,7 @@ const fmt = (n) =>
 const hoy = () => new Date().toISOString().slice(0, 10);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-/* ---------- Logo Kallpa (SVG basado en el logotipo) ---------- */
+/* ---------- Logo Kallpa ---------- */
 const Logo = ({ size = 44 }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
     <circle cx="50" cy="50" r="48" fill={C.crema} />
@@ -503,13 +504,11 @@ function KallpaCRM() {
   };
 
   const restoreBackup = async (data) => {
-    // Esta función ahora solo restaura el estado local
     const p = data.products || [], s = data.sales || [], m = data.moves || [], ph = data.photos || {};
     setProducts(p);
     setSales(s);
     setMoves(m);
     setPhotos(ph);
-    // Nota: los datos ya están en Supabase
     notify('✅ Respaldo restaurado localmente');
   };
 
@@ -592,11 +591,6 @@ function KallpaCRM() {
     </div>
   );
 }
-
-// ============================================================
-// TODAS LAS DEMÁS FUNCIONES (Tablero, Inventario, Ventas, Egresos, Catalogo, Ajustes, Modal)
-// Se mantienen IGUALES que en tu código original
-// ============================================================
 
 /* ---------- Tablero ---------- */
 function Tablero({ stats, sales, moves, products, photos }) {
