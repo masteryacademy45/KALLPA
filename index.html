@@ -30,6 +30,76 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============================================================
+   CONVERSIÓN app (camelCase) <-> base de datos (snake_case)
+   PostgREST rechaza claves que no coinciden EXACTAMENTE con las
+   columnas de la tabla. La app usa precioCompra, productId, etc.,
+   pero las columnas en Postgres son precio_compra, product_id...
+   Estas funciones traducen en ambos sentidos.
+   ============================================================ */
+const prodToDb = (p) => ({
+  id: p.id,
+  nombre: p.nombre,
+  categoria: p.categoria || null,
+  precio_compra: Number(p.precioCompra) || 0,
+  precio_mayor: Number(p.precioMayor) || 0,
+  precio_menor: Number(p.precioMenor) || 0,
+  stock: Number(p.stock) || 0,
+  stock_min: Number(p.stockMin) || 0
+});
+const prodFromDb = (r) => ({
+  id: r.id,
+  nombre: r.nombre,
+  categoria: r.categoria || 'Otra',
+  precioCompra: Number(r.precio_compra) || 0,
+  precioMayor: Number(r.precio_mayor) || 0,
+  precioMenor: Number(r.precio_menor) || 0,
+  stock: Number(r.stock) || 0,
+  stockMin: r.stock_min == null ? 6 : Number(r.stock_min)
+});
+const ventaToDb = (v) => ({
+  id: v.id,
+  fecha: v.fecha,
+  product_id: v.productId || null,
+  producto_nombre: v.productoNombre || '',
+  tipo: v.tipo,
+  qty: Number(v.qty) || 0,
+  precio_unit: Number(v.precioUnit) || 0,
+  cost_unit: Number(v.costUnit) || 0,
+  total: Number(v.total) || 0,
+  cliente: v.cliente || ''
+});
+const ventaFromDb = (r) => ({
+  id: r.id,
+  fecha: r.fecha,
+  productId: r.product_id,
+  productoNombre: r.producto_nombre || '',
+  tipo: r.tipo,
+  qty: Number(r.qty) || 0,
+  precioUnit: Number(r.precio_unit) || 0,
+  costUnit: Number(r.cost_unit) || 0,
+  total: Number(r.total) || 0,
+  cliente: r.cliente || ''
+});
+const egresoToDb = (m) => ({
+  id: m.id,
+  fecha: m.fecha,
+  tipo: m.tipo,
+  product_id: m.productId || null,
+  concepto: m.concepto || '',
+  qty: m.qty == null || m.qty === '' ? null : Number(m.qty),
+  total: Number(m.total) || 0
+});
+const egresoFromDb = (r) => ({
+  id: r.id,
+  fecha: r.fecha,
+  tipo: r.tipo,
+  productId: r.product_id,
+  concepto: r.concepto || '',
+  qty: r.qty == null ? null : Number(r.qty),
+  total: Number(r.total) || 0
+});
+
+/* ============================================================
    FUNCIONES DE SUPABASE - VERSIÓN CORREGIDA
    ============================================================ */
 window.storage = {
@@ -40,16 +110,16 @@ window.storage = {
       .select('*')
       .order('nombre');
     if (error) throw error;
-    return data || [];
+    return (data || []).map(prodFromDb);
   },
 
   async upsertProducto(producto) {
     const { data, error } = await supabase
       .from('productos')
-      .upsert(producto, { onConflict: 'id' })
+      .upsert(prodToDb(producto), { onConflict: 'id' })
       .select();
     if (error) throw error;
-    return data[0];
+    return prodFromDb(data[0]);
   },
 
   async deleteProducto(id) {
@@ -67,16 +137,16 @@ window.storage = {
       .select('*')
       .order('fecha', { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map(ventaFromDb);
   },
 
   async upsertVenta(venta) {
     const { data, error } = await supabase
       .from('ventas')
-      .upsert(venta, { onConflict: 'id' })
+      .upsert(ventaToDb(venta), { onConflict: 'id' })
       .select();
     if (error) throw error;
-    return data[0];
+    return ventaFromDb(data[0]);
   },
 
   async deleteVenta(id) {
@@ -94,16 +164,16 @@ window.storage = {
       .select('*')
       .order('fecha', { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map(egresoFromDb);
   },
 
   async upsertEgreso(egreso) {
     const { data, error } = await supabase
       .from('egresos')
-      .upsert(egreso, { onConflict: 'id' })
+      .upsert(egresoToDb(egreso), { onConflict: 'id' })
       .select();
     if (error) throw error;
-    return data[0];
+    return egresoFromDb(data[0]);
   },
 
   async deleteEgreso(id) {
@@ -379,7 +449,7 @@ function KallpaCRM() {
           id: uid(),
           fecha: hoy(),
           tipo: 'compra',
-          producto_id: prod.id,
+          productId: prod.id,
           concepto: `Stock inicial: ${prod.nombre}`,
           qty: prod.stock,
           total: prod.stock * prod.precioCompra
@@ -387,8 +457,10 @@ function KallpaCRM() {
         const savedEgreso = await window.storage.upsertEgreso(nuevoEgreso);
         setMoves(prev => [savedEgreso, ...prev]);
       }
+      notify('✅ Producto guardado');
     } catch (e) {
-      notify('⚠️ Error al guardar el producto');
+      console.error('Error al guardar el producto:', e);
+      notify('⚠️ Error al guardar: ' + (e.message || e.code || 'desconocido'));
     }
   };
 
@@ -788,7 +860,6 @@ function Inventario({ products, photos, onSave, onDelete, onPhoto, notify }) {
             onSave(p);
             if (fotoNueva) onPhoto(p.id, fotoNueva);
             setEditing(null);
-            notify("✅ Producto guardado");
           }}
           onDelete={(id) => { onDelete(id); setEditing(null); notify("Producto eliminado"); }}
         />
